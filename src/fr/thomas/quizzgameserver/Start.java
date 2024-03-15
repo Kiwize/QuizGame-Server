@@ -3,8 +3,11 @@ package fr.thomas.quizzgameserver;
 public class Start {
 
 	public static void main(String[] args) {
-		// TODO Auto-generated method stub
-
+		new Start().init();
+	}
+	
+	public void init() {
+		System.out.println("Starting VINCI SpriteBot server...");
 	}
 
 }
