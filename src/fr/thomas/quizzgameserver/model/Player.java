@@ -24,32 +24,30 @@ public class Player implements IModel {
 	}
 
 	public boolean authenticate(String name, String password) {
-//		try {
-//			Statement st = controller.getDatabaseHelper().getStatement(0);
-//			ResultSet set = st.executeQuery("SELECT idplayer, name FROM Player WHERE name = '" + name + "';");
-//
-//			if (!set.next()) {
-//				System.err.println("Unknown user");
-//				return false;
-//			} else {
-//				set = st.executeQuery("SELECT idplayer, name, password FROM Player WHERE name = '" + name + "';");
-//				if (set.next()) {
-//					if (BCrypt.checkpw(password, set.getString("password"))) {
-//						this.id = set.getInt("idplayer");
-//						this.password = set.getString("password");
-//						this.name = set.getString("name");
-//					} else {
-//						System.err.println("Wrong password !");
-//						return false;
-//					}
-//				}
-//
-//				return true;
-//			}
-//		} catch (SQLException e) {
-//			e.printStackTrace();
-//			return false;
-//		}
+		try {
+			Statement st = controller.getDatabaseHelper().getStatement(0);
+			ResultSet set = st.executeQuery("SELECT idplayer, name FROM Player WHERE name = '" + name + "';");
+
+			if (!set.next()) {
+				return false;
+			} else {
+				set = st.executeQuery("SELECT idplayer, name, password FROM Player WHERE name = '" + name + "';");
+				if (set.next()) {
+					if (BCrypt.checkpw(password, set.getString("password"))) {
+						this.id = set.getInt("idplayer");
+						this.password = set.getString("password");
+						this.name = set.getString("name");
+					} else {
+						return false;
+					}
+				}
+
+				return true;
+			}
+		} catch (SQLException e) {
+			e.printStackTrace();
+			return false;
+		}
 	}
 
 	public int getHighestScore() {

@@ -1,5 +1,6 @@
 package fr.thomas.quizzgameserver.controller;
 
+import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,13 +16,23 @@ import org.passay.PasswordValidator;
 import org.passay.RuleResult;
 import org.passay.WhitespaceRule;
 
+import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryonet.Connection;
+import com.esotericsoftware.kryonet.Listener;
+import com.esotericsoftware.kryonet.Server;
+
 import fr.thomas.quizzgameserver.model.Answer;
 import fr.thomas.quizzgameserver.model.Game;
 import fr.thomas.quizzgameserver.model.Player;
 import fr.thomas.quizzgameserver.model.Question;
+import fr.thomas.quizzgameserver.net.Login;
+import fr.thomas.quizzgameserver.utils.BCrypt;
 import fr.thomas.quizzgameserver.utils.DatabaseHelper;
 
 public class GameController {
+	
+	private Server server;
+	private Kryo kryo;
 
 	private DatabaseHelper databaseHelper;
 
@@ -39,6 +50,17 @@ public class GameController {
 	 * @author Thomas PRADEAU
 	 */
 	public GameController() {
+		server = new Server();
+		server.start();
+		try {
+			server.bind(54555, 54777);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+
+		kryo = server.getKryo();
+		kryo.register(Login.LoginRequest.class);
+		kryo.register(Login.LoginResponse.class);
 	
 		// Créer la vue
 		this.myConfig = new Config();
@@ -50,6 +72,25 @@ public class GameController {
 		}
 		
 		player = new Player("", this);
+		
+		server.addListener(new Listener() {
+			public void received(Connection connection, Object object) {
+				if(object instanceof Login.LoginRequest) {
+					Login.LoginRequest login_request = (Login.LoginRequest) object;
+					Login.LoginResponse login_response = new Login.LoginResponse();
+					
+					if(player.authenticate(login_request.username, login_request.password)) {
+						login_response.isConnected = true;
+					} else {
+						login_response.isConnected = false;
+					}
+					
+					server.sendToTCP(connection.getID(), login_response);
+				}
+			}
+		});
+		
+		
 
 		passwordValidator = new PasswordValidator(new LengthRule(12, 24),
 				new CharacterRule(EnglishCharacterData.LowerCase, 1),
