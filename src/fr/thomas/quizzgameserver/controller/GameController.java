@@ -26,7 +26,7 @@ import fr.thomas.quizzgameserver.model.Game;
 import fr.thomas.quizzgameserver.model.Player;
 import fr.thomas.quizzgameserver.model.Question;
 import fr.thomas.quizzgameserver.net.Login;
-import fr.thomas.quizzgameserver.utils.BCrypt;
+import fr.thomas.quizzgameserver.net.object.PlayerNetObject;
 import fr.thomas.quizzgameserver.utils.DatabaseHelper;
 
 public class GameController {
@@ -61,7 +61,8 @@ public class GameController {
 		kryo = server.getKryo();
 		kryo.register(Login.LoginRequest.class);
 		kryo.register(Login.LoginResponse.class);
-	
+		kryo.register(PlayerNetObject.class);
+		
 		// Créer la vue
 		this.myConfig = new Config();
 		
@@ -81,6 +82,8 @@ public class GameController {
 					
 					if(player.authenticate(login_request.username, login_request.password)) {
 						login_response.isConnected = true;
+						PlayerNetObject playerNet = new PlayerNetObject(player.getID(), player.getName(), player.getPassword(), player.getHighestScore());
+						login_response.player = playerNet;
 					} else {
 						login_response.isConnected = false;
 					}
@@ -90,8 +93,6 @@ public class GameController {
 			}
 		});
 		
-		
-
 		passwordValidator = new PasswordValidator(new LengthRule(12, 24),
 				new CharacterRule(EnglishCharacterData.LowerCase, 1),
 				new CharacterRule(EnglishCharacterData.UpperCase, 1), new CharacterRule(EnglishCharacterData.Digit, 1),
