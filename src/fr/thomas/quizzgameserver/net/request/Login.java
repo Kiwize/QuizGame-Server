@@ -1,4 +1,4 @@
-package fr.thomas.quizzgameserver.net;
+package fr.thomas.quizzgameserver.net.request;
 
 import fr.thomas.quizzgameserver.net.object.PlayerNetObject;
 

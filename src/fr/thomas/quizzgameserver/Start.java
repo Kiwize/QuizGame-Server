@@ -12,7 +12,6 @@ public class Start {
 	
 	public void init() {
 		System.out.println("Starting VINCI SpriteBot server...");
-		
 		game = new GameController();
 	}
 
