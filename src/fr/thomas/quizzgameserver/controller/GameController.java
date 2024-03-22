@@ -6,16 +6,13 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Map;
 
 import org.passay.CharacterRule;
 import org.passay.EnglishCharacterData;
 import org.passay.EnglishSequenceData;
 import org.passay.IllegalSequenceRule;
 import org.passay.LengthRule;
-import org.passay.PasswordData;
 import org.passay.PasswordValidator;
-import org.passay.RuleResult;
 import org.passay.WhitespaceRule;
 
 import com.esotericsoftware.kryo.Kryo;
@@ -23,17 +20,16 @@ import com.esotericsoftware.kryonet.Connection;
 import com.esotericsoftware.kryonet.Listener;
 import com.esotericsoftware.kryonet.Server;
 
-import fr.thomas.quizzgameserver.model.Answer;
-import fr.thomas.quizzgameserver.model.Game;
+import fr.thomas.quizzgameserver.controller.threading.GameThread;
 import fr.thomas.quizzgameserver.model.OnlineGame;
 import fr.thomas.quizzgameserver.model.Player;
-import fr.thomas.quizzgameserver.model.Question;
 import fr.thomas.quizzgameserver.net.object.OnlineGameNetObject;
 import fr.thomas.quizzgameserver.net.object.PlayerNetObject;
 import fr.thomas.quizzgameserver.net.request.Broadcast.ServerInfoRefresh;
 import fr.thomas.quizzgameserver.net.request.Login;
 import fr.thomas.quizzgameserver.net.request.Login.LoginRequest;
 import fr.thomas.quizzgameserver.net.request.Login.LoginResponse;
+import fr.thomas.quizzgameserver.net.request.ServerInfo.ServerCountDown;
 import fr.thomas.quizzgameserver.net.request.ServerInfo.ServerInfoRequest;
 import fr.thomas.quizzgameserver.net.request.ServerInfo.ServerInfoResponse;
 import fr.thomas.quizzgameserver.net.request.ServerJoin.ServerJoinRequest;
@@ -50,19 +46,17 @@ public class GameController {
 	private Kryo kryo;
 
 	private DatabaseHelper databaseHelper;
-
-	private Player player;
-	private ArrayList<Question> questions;
-	private Game game;
-	private int diff;
 	private Config myConfig;
 
-	private boolean isGameStarted = false;
-
 	private PasswordValidator passwordValidator;
-
+	
+	private HashMap<Integer, OnlineGame> activeGames; //Game with at least one player waiting...
+	private HashMap<Integer, GameThread> launchedThreads;
+	
 	// Server id and list of player IDs
 	private HashMap<Integer, ArrayList<Integer>> gamePlayerList;
+	
+	private HashMap<Integer, Integer> socketPlayerMap;
 
 	/**
 	 * @author Thomas PRADEAU
@@ -91,19 +85,23 @@ public class GameController {
 		kryo.register(ServerQuitResponse.class);
 		kryo.register(ServerQuitRequest.class);
 		kryo.register(ServerInfoRefresh.class);
+		kryo.register(ServerCountDown.class);
 
-		// Créer la vue
 		this.myConfig = new Config();
-
+		
+		this.socketPlayerMap = new HashMap<Integer, Integer>();
+		this.activeGames = new HashMap<Integer, OnlineGame>();
+		this.launchedThreads = new HashMap<Integer, GameThread>();
+		
 		try {
 			this.databaseHelper = new DatabaseHelper(this);
 		} catch (ClassNotFoundException | SQLException e) {
 			e.printStackTrace();
 		}
 
-		player = new Player("", this);
 		gamePlayerList = new HashMap<Integer, ArrayList<Integer>>();
-
+		Player player = new Player("", this);
+		
 		server.addListener(new Listener() {
 			public void received(Connection connection, Object object) {
 				if (object instanceof LoginRequest) {
@@ -115,6 +113,7 @@ public class GameController {
 						PlayerNetObject playerNet = new PlayerNetObject(player.getID(), player.getName(),
 								player.getPassword(), player.getHighestScore());
 						login_response.player = playerNet;
+						socketPlayerMap.put(player.getID(), connection.getID()); //Register player id by his socket id;
 					} else {
 						login_response.isConnected = false;
 					}
@@ -147,12 +146,35 @@ public class GameController {
 							gamePlayerList.get(request_data.game.getId()).add(request_data.player.getId());
 							response.isJoinable = true;
 							
-							ServerInfoRefresh refreshBroadcast = new ServerInfoRefresh();
-							refreshBroadcast.playerIDs = gamePlayerList.get(request_data.player.getId());
-							server.sendToAllTCP(refreshBroadcast);
+							//ServerInfoRefresh refreshBroadcast = new ServerInfoRefresh();
+							//refreshBroadcast.playerIDs = gamePlayerList.get(request_data.player.getId());
+							//server.sendToAllTCP(refreshBroadcast);
 							
 							System.out.println("Player " + request_data.player.getName() + " joined game "
 									+ request_data.game.getName());
+							
+							OnlineGame tmpGame = new OnlineGame(request_data.game);
+							
+							if(activeGames.containsKey(tmpGame.getId())) {
+								//If game is already marked active (players already waiting)
+								tmpGame = activeGames.get(request_data.game.getId());
+								
+								tmpGame.updatePlayerList(gamePlayerList.get(request_data.game.getId()));
+								
+								if(tmpGame.isThereEnoughPlayer()) {
+									GameThread thread = new GameThread(getController(), tmpGame);
+									launchedThreads.put(tmpGame.getId(), thread);
+									thread.start();
+								}
+								
+							} else {
+								tmpGame.updatePlayerList(gamePlayerList.get(request_data.game.getId()));
+								activeGames.put(tmpGame.getId(), tmpGame);
+							}
+							
+							
+							
+							System.out.println("New active game size : " + activeGames.size());
 						} else {
 							response.isJoinable = false;
 							System.out.println("The player have already joined the game.");
@@ -160,6 +182,45 @@ public class GameController {
 
 					} else
 						response.isJoinable = false;
+
+					server.sendToTCP(connection.getID(), response);
+				}
+				
+				if (object instanceof ServerQuitRequest) {
+					ServerQuitResponse response = new ServerQuitResponse();
+					ServerQuitRequest request_data = (ServerQuitRequest) object;
+
+					if (gamePlayerList.get(request_data.gameID).contains(request_data.playerID)) {
+						gamePlayerList.get(request_data.gameID).remove(new Integer(request_data.playerID));
+						
+						ServerInfoRefresh refreshBroadcast = new ServerInfoRefresh();
+						refreshBroadcast.playerIDs = gamePlayerList.get(request_data.playerID);
+						server.sendToAllTCP(refreshBroadcast);
+						
+						response.hasQuit = true;
+						
+						OnlineGame tmpGame = activeGames.get(request_data.gameID);
+						
+						tmpGame.updatePlayerList(gamePlayerList.get(request_data.gameID));
+						
+						if(tmpGame.getPlayers().size() == 0) {
+							activeGames.remove(tmpGame.getId());
+							System.out.println("remove game from active game list");
+						}
+						
+						for(OnlineGame activeGame : activeGames.values()) {
+							if(!activeGame.isThereEnoughPlayer() && launchedThreads.containsKey(activeGame.getId())) {
+								GameThread thread = launchedThreads.get(activeGame.getId());
+								
+								thread.abortStart();
+							}
+						}
+						
+						System.out.println("New active game size : " + activeGames.size());
+						
+					} else {
+						response.hasQuit = false;
+					}
 
 					server.sendToTCP(connection.getID(), response);
 				}
@@ -182,28 +243,12 @@ public class GameController {
 					response.name = game.getName();
 					response.onlinePlayer = gamePlayerList.get(request_data.gameID).size();
 					response.maxPlayers = game.getMaxPlayer();
+					response.minPlayers = game.getMinPlayer();
 					response.players = gamePlayerList.get(request_data.gameID);
 					server.sendToTCP(connection.getID(), response);
 				}
 
-				if (object instanceof ServerQuitRequest) {
-					ServerQuitResponse response = new ServerQuitResponse();
-					ServerQuitRequest request_data = (ServerQuitRequest) object;
-
-					if (gamePlayerList.get(request_data.gameID).contains(request_data.playerID)) {
-						gamePlayerList.get(request_data.gameID).remove(new Integer(request_data.playerID));
-						
-						ServerInfoRefresh refreshBroadcast = new ServerInfoRefresh();
-						refreshBroadcast.playerIDs = gamePlayerList.get(request_data.playerID);
-						server.sendToAllTCP(refreshBroadcast);
-						
-						response.hasQuit = true;
-					} else {
-						response.hasQuit = false;
-					}
-
-					server.sendToTCP(connection.getID(), response);
-				}
+				
 			}
 		});
 
@@ -223,23 +268,19 @@ public class GameController {
 		}
 
 	}
-
-	public void playerAuth(String name, String password) {
-		if (player.authenticate(name, password)) {
-		} else {
-			System.err.println("Invalid password...");
+	
+	/**
+	 * Send the same message to every players in the arraylist specified
+	 * @param recievers
+	 * @param object
+	 */
+	public void sendTCPTo(ArrayList<Integer> recievers, Object object) {
+		for(int reciever : recievers) {
+			server.sendToTCP(socketPlayerMap.get(reciever), object);
+			System.out.println("Updating time left for player " + reciever);
 		}
 	}
-
-	public void startGame() {
-		this.game = new Game(this, player);
-		if (!isGameStarted) {
-			game.getRandomQuestions(); // Choisir les questions aléatoirement
-			game.begin();
-			isGameStarted = true;
-		}
-	}
-
+	
 	public ArrayList<OnlineGame> getServerList() {
 		try {
 			Statement st = getDatabaseHelper().getStatement(0);
@@ -257,82 +298,21 @@ public class GameController {
 			return null;
 		}
 	}
-
-	public void finishGame(HashMap<Question, Answer> gameHistory) {
-		// TODO Show recap view
-		isGameStarted = false;
-
-		int gameScoreBuffer = 0;
-
-		for (Map.Entry<Question, Answer> gameEntry : gameHistory.entrySet()) {
-			if (gameEntry.getValue().isCorrect()) {
-				gameScoreBuffer += gameEntry.getKey().getDifficulty() * 100;
-			}
-		}
-
-		game.setScore(gameScoreBuffer);
-		game.insert();
-
-		// view.showGameRecap(gameHistory);
-
-	}
-
-	/**
-	 * Asks controller to show password change view if the logins provided by the
-	 * user are correct.
-	 * 
-	 * @param username
-	 * @param password
-	 */
-	public void submitPasswordChange(String username, String password) {
-		if (player.authenticate(username, password)) {
-		} else {
-		}
-	}
-
-	public void changePassword(String password, String confirm) {
-		if (password.equals(confirm)) {
-			final PasswordData passwordData = new PasswordData(password);
-			final RuleResult validate = passwordValidator.validate(passwordData);
-
-			if (!validate.isValid()) {
-				return;
-			}
-
-			if (player.updatePassword(password)) {
-
-			}
-		} else {
-		}
-	}
-
-	public ArrayList<Question> getQuestions() {
-		return questions;
-	}
-
-	public void setQuestions(ArrayList<Question> questions) {
-		this.questions = questions;
-	}
-
-	public Player getPlayer() {
-		return player;
-	}
-
-	public Game getGame() {
-		return game;
+	
+	public GameController getController() {
+		return this;
 	}
 
 	public DatabaseHelper getDatabaseHelper() {
 		return databaseHelper;
 	}
 
-	/**
-	 * Password errors callback enumeration That allows to define error messages for
-	 * each password requirement.
-	 */
-
 	public Config getMyConfig() {
 		return myConfig;
+	}
+	
+	public HashMap<Integer, Integer> getSocketPlayerMap() {
+		return socketPlayerMap;
 	}
 
 	public void setMyConfig(Config myConfig) {

@@ -5,6 +5,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 import fr.thomas.quizzgameserver.controller.GameController;
+import fr.thomas.quizzgameserver.net.object.PlayerNetObject;
 import fr.thomas.quizzgameserver.utils.BCrypt;
 
 public class Player implements IModel {
@@ -16,6 +17,13 @@ public class Player implements IModel {
 
 	public Player(String name, GameController controller) {
 		this.name = name;
+		this.controller = controller;
+	}
+	
+	public Player(PlayerNetObject netObject, GameController controller) {
+		this.id = netObject.getId();
+		this.name = netObject.getName();
+		this.password = netObject.getPassword();
 		this.controller = controller;
 	}
 

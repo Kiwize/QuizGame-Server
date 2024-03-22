@@ -93,7 +93,7 @@ public class Game implements IModel {
 				cq.add(new Question(questionId, this.controller));
 			}
 
-			controller.setQuestions(cq);
+			//controller.setQuestions(cq);
 
 		} catch (SQLException e) {
 			e.printStackTrace();

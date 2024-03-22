@@ -13,7 +13,12 @@ public class ServerInfo {
 		public int onlinePlayer;
 		public int gameStatus;
 		public int maxPlayers;
+		public int minPlayers;
 		public ArrayList<Integer> players;
+	}
+	
+	public static class ServerCountDown {
+		public int time;
 	}
 
 }
