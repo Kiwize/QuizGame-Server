@@ -36,6 +36,12 @@ public class Question {
 				this.label = res.getString("label");
 				this.difficultyLevel = res.getInt("difficultyLevel");
 				this.answers = new ArrayList<>();
+
+				ResultSet qr = st.executeQuery("SELECT * FROM Answer WHERE Answer.idquestion = " + this.id + ";");
+
+				while (qr.next()) {
+					answers.add(new Answer(qr.getString("label"), qr.getBoolean("iscorrect")));
+				}
 			}
 
 		} catch (SQLException e) {
@@ -46,7 +52,7 @@ public class Question {
 	public ArrayList<Answer> getAnswers() {
 		return answers;
 	}
-	
+
 	public String getAnAnswer(int id) {
 		return answers.get(id).getLabel();
 	}
@@ -57,5 +63,9 @@ public class Question {
 
 	public int getDifficulty() {
 		return difficultyLevel;
+	}
+
+	public int getId() {
+		return id;
 	}
 }

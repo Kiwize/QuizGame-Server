@@ -21,10 +21,13 @@ import com.esotericsoftware.kryonet.Listener;
 import com.esotericsoftware.kryonet.Server;
 
 import fr.thomas.quizzgameserver.controller.threading.GameThread;
+import fr.thomas.quizzgameserver.model.Answer;
 import fr.thomas.quizzgameserver.model.OnlineGame;
 import fr.thomas.quizzgameserver.model.Player;
+import fr.thomas.quizzgameserver.net.object.AnswerNetObject;
 import fr.thomas.quizzgameserver.net.object.OnlineGameNetObject;
 import fr.thomas.quizzgameserver.net.object.PlayerNetObject;
+import fr.thomas.quizzgameserver.net.object.QuestionNetObject;
 import fr.thomas.quizzgameserver.net.request.Broadcast.ServerInfoRefresh;
 import fr.thomas.quizzgameserver.net.request.Login;
 import fr.thomas.quizzgameserver.net.request.Login.LoginRequest;
@@ -36,6 +39,10 @@ import fr.thomas.quizzgameserver.net.request.ServerJoin.ServerJoinRequest;
 import fr.thomas.quizzgameserver.net.request.ServerJoin.ServerJoinResponse;
 import fr.thomas.quizzgameserver.net.request.ServerList.ServerListRequest;
 import fr.thomas.quizzgameserver.net.request.ServerList.ServerListResponse;
+import fr.thomas.quizzgameserver.net.request.ServerPlay.AnswerTimeLeft;
+import fr.thomas.quizzgameserver.net.request.ServerPlay.GetPlayerAnswer;
+import fr.thomas.quizzgameserver.net.request.ServerPlay.ServerEndGame;
+import fr.thomas.quizzgameserver.net.request.ServerPlay.ShowQuestion;
 import fr.thomas.quizzgameserver.net.request.ServerQuit.ServerQuitRequest;
 import fr.thomas.quizzgameserver.net.request.ServerQuit.ServerQuitResponse;
 import fr.thomas.quizzgameserver.utils.DatabaseHelper;
@@ -86,6 +93,12 @@ public class GameController {
 		kryo.register(ServerQuitRequest.class);
 		kryo.register(ServerInfoRefresh.class);
 		kryo.register(ServerCountDown.class);
+		kryo.register(ShowQuestion.class);
+		kryo.register(GetPlayerAnswer.class);
+		kryo.register(QuestionNetObject.class);
+		kryo.register(AnswerNetObject.class);
+		kryo.register(ServerEndGame.class);
+		kryo.register(AnswerTimeLeft.class);
 
 		this.myConfig = new Config();
 		
@@ -127,7 +140,7 @@ public class GameController {
 
 					for (OnlineGame game : serverList) {
 						temp.add(new OnlineGameNetObject(game.getId(), game.getName(), game.getMaxPlayer(),
-								game.getMinPlayer(), game.getTimeToAnswer(), game.getGameStatus()));
+								game.getMinPlayer(), game.getTimeToAnswer(), game.getGameStatus(), game.getTimeBeforeStart()));
 					}
 
 					ServerListResponse response = new ServerListResponse();
@@ -146,10 +159,6 @@ public class GameController {
 							gamePlayerList.get(request_data.game.getId()).add(request_data.player.getId());
 							response.isJoinable = true;
 							
-							//ServerInfoRefresh refreshBroadcast = new ServerInfoRefresh();
-							//refreshBroadcast.playerIDs = gamePlayerList.get(request_data.player.getId());
-							//server.sendToAllTCP(refreshBroadcast);
-							
 							System.out.println("Player " + request_data.player.getName() + " joined game "
 									+ request_data.game.getName());
 							
@@ -158,21 +167,20 @@ public class GameController {
 							if(activeGames.containsKey(tmpGame.getId())) {
 								//If game is already marked active (players already waiting)
 								tmpGame = activeGames.get(request_data.game.getId());
-								
-								tmpGame.updatePlayerList(gamePlayerList.get(request_data.game.getId()));
-								
-								if(tmpGame.isThereEnoughPlayer()) {
-									GameThread thread = new GameThread(getController(), tmpGame);
-									launchedThreads.put(tmpGame.getId(), thread);
-									thread.start();
-								}
-								
 							} else {
-								tmpGame.updatePlayerList(gamePlayerList.get(request_data.game.getId()));
 								activeGames.put(tmpGame.getId(), tmpGame);
 							}
 							
+							tmpGame.updatePlayerList(gamePlayerList.get(request_data.game.getId()));
 							
+							if(tmpGame.isThereEnoughPlayer()) {
+								GameThread thread = new GameThread(getController(), tmpGame);
+								Thread gameThread = new Thread(thread);
+								gameThread.setName("Thread-" + tmpGame.getName().replace(" ", "_"));
+								
+								launchedThreads.put(tmpGame.getId(), thread);
+								gameThread.start();
+							}
 							
 							System.out.println("New active game size : " + activeGames.size());
 						} else {
@@ -211,7 +219,6 @@ public class GameController {
 						for(OnlineGame activeGame : activeGames.values()) {
 							if(!activeGame.isThereEnoughPlayer() && launchedThreads.containsKey(activeGame.getId())) {
 								GameThread thread = launchedThreads.get(activeGame.getId());
-								
 								thread.abortStart();
 							}
 						}
@@ -247,8 +254,13 @@ public class GameController {
 					response.players = gamePlayerList.get(request_data.gameID);
 					server.sendToTCP(connection.getID(), response);
 				}
-
 				
+				if(object instanceof GetPlayerAnswer) {
+					GetPlayerAnswer request_data = (GetPlayerAnswer) object;
+					
+					GameThread currentThread = launchedThreads.get(request_data.onlineGameID);
+					currentThread.givePlayerAnswer(request_data.playerID, new Answer(request_data.answer));
+				}
 			}
 		});
 
@@ -277,7 +289,10 @@ public class GameController {
 	public void sendTCPTo(ArrayList<Integer> recievers, Object object) {
 		for(int reciever : recievers) {
 			server.sendToTCP(socketPlayerMap.get(reciever), object);
-			System.out.println("Updating time left for player " + reciever);
+			
+			if(object instanceof ShowQuestion) {
+				System.out.println("Question showed : " + ((ShowQuestion) object).question.getLabel());
+			}
 		}
 	}
 	
@@ -289,7 +304,7 @@ public class GameController {
 
 			while (res.next()) {
 				serverList.add(new OnlineGame(this, res.getInt("id"), res.getString("name"), res.getInt("max_player"),
-						res.getInt("min_player"), res.getInt("time_to_answer"), res.getInt("game_status")));
+						res.getInt("min_player"), res.getInt("time_to_answer"), res.getInt("game_status"), res.getInt("time_before_start")));
 			}
 
 			return serverList;

@@ -23,6 +23,7 @@ public class OnlineGame {
 	private int minPlayer;
 	private int timeToAnswer;
 	private int gameStatus;
+	private int timeBeforeStart;
 	
 	private GameController controller;
 	
@@ -38,11 +39,12 @@ public class OnlineGame {
 		this.minPlayer = netObject.getMinPlayer();
 		this.timeToAnswer = netObject.getTimeToAnswer();
 		this.gameStatus = netObject.getGameStatus();
+		this.timeBeforeStart = netObject.getTimeBeforeStart();
 		
 		this.players = new ArrayList<Integer>();
 	}
 
-	public OnlineGame(GameController controller, int id, String name, int maxPlayer, int minPlayer, int timeToAnswer, int gameStatus) {
+	public OnlineGame(GameController controller, int id, String name, int maxPlayer, int minPlayer, int timeToAnswer, int gameStatus, int timeBeforeStart) {
 		this.controller = controller;
 		this.id = id;
 		this.name = name;
@@ -50,6 +52,7 @@ public class OnlineGame {
 		this.minPlayer = minPlayer;
 		this.timeToAnswer = timeToAnswer;
 		this.gameStatus = gameStatus;
+		this.timeBeforeStart = timeBeforeStart;
 		
 		this.players = new ArrayList<Integer>();
 	}
@@ -162,6 +165,10 @@ public class OnlineGame {
 	public ArrayList<Integer> getPlayers() {
 		return players;
 	}
+	
+	public ArrayList<Question> getQuestions() {
+		return questions;
+	}
 
 	public String getName() {
 		return name;
@@ -175,5 +182,7 @@ public class OnlineGame {
 		return gameStatus;
 	}
 
-	
+	public int getTimeBeforeStart() {
+		return timeBeforeStart;
+	}	
 }

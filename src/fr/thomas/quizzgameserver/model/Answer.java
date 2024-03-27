@@ -1,15 +1,20 @@
 package fr.thomas.quizzgameserver.model;
 
+import fr.thomas.quizzgameserver.net.object.AnswerNetObject;
+
 public class Answer {
 	
 	private String label;
 	private boolean isCorrect;
-	private char qchar;
 	
-	public Answer(char qchar, String label, boolean isCorrect) {
+	public Answer(AnswerNetObject netObject) {
+		this.label = netObject.getLabel();
+		this.isCorrect = netObject.isCorrect();
+	}
+	
+	public Answer(String label, boolean isCorrect) {
 		this.label = label;
 		this.isCorrect = isCorrect;
-		this.qchar = qchar;
 	}
 	
 	public String getLabel() {
@@ -18,9 +23,5 @@ public class Answer {
 	
 	public boolean isCorrect() {
 		return isCorrect;
-	}
-	
-	public char getQchar() {
-		return qchar;
 	}
 }
