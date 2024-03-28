@@ -56,13 +56,13 @@ public class GameController {
 	private Config myConfig;
 
 	private PasswordValidator passwordValidator;
-	
-	private HashMap<Integer, OnlineGame> activeGames; //Game with at least one player waiting...
+
+	private HashMap<Integer, OnlineGame> activeGames; // Game with at least one player waiting...
 	private HashMap<Integer, GameThread> launchedThreads;
-	
+
 	// Server id and list of player IDs
 	private HashMap<Integer, ArrayList<Integer>> gamePlayerList;
-	
+
 	private HashMap<Integer, Integer> socketPlayerMap;
 
 	/**
@@ -101,11 +101,11 @@ public class GameController {
 		kryo.register(AnswerTimeLeft.class);
 
 		this.myConfig = new Config();
-		
+
 		this.socketPlayerMap = new HashMap<Integer, Integer>();
 		this.activeGames = new HashMap<Integer, OnlineGame>();
 		this.launchedThreads = new HashMap<Integer, GameThread>();
-		
+
 		try {
 			this.databaseHelper = new DatabaseHelper(this);
 		} catch (ClassNotFoundException | SQLException e) {
@@ -114,7 +114,7 @@ public class GameController {
 
 		gamePlayerList = new HashMap<Integer, ArrayList<Integer>>();
 		Player player = new Player("", this);
-		
+
 		server.addListener(new Listener() {
 			public void received(Connection connection, Object object) {
 				if (object instanceof LoginRequest) {
@@ -126,7 +126,7 @@ public class GameController {
 						PlayerNetObject playerNet = new PlayerNetObject(player.getID(), player.getName(),
 								player.getPassword(), player.getHighestScore());
 						login_response.player = playerNet;
-						socketPlayerMap.put(player.getID(), connection.getID()); //Register player id by his socket id;
+						socketPlayerMap.put(player.getID(), connection.getID()); // Register player id by his socket id;
 					} else {
 						login_response.isConnected = false;
 					}
@@ -140,7 +140,8 @@ public class GameController {
 
 					for (OnlineGame game : serverList) {
 						temp.add(new OnlineGameNetObject(game.getId(), game.getName(), game.getMaxPlayer(),
-								game.getMinPlayer(), game.getTimeToAnswer(), game.getGameStatus(), game.getTimeBeforeStart()));
+								game.getMinPlayer(), game.getTimeToAnswer(), game.getGameStatus(),
+								game.getTimeBeforeStart()));
 					}
 
 					ServerListResponse response = new ServerListResponse();
@@ -158,30 +159,31 @@ public class GameController {
 						if (!gamePlayerList.get(request_data.game.getId()).contains(request_data.player.getId())) {
 							gamePlayerList.get(request_data.game.getId()).add(request_data.player.getId());
 							response.isJoinable = true;
-							
+
 							System.out.println("Player " + request_data.player.getName() + " joined game "
 									+ request_data.game.getName());
-							
+
 							OnlineGame tmpGame = new OnlineGame(request_data.game);
-							
-							if(activeGames.containsKey(tmpGame.getId())) {
-								//If game is already marked active (players already waiting)
+
+							if (activeGames.containsKey(tmpGame.getId())) {
+								// If game is already marked active (players already waiting)
 								tmpGame = activeGames.get(request_data.game.getId());
 							} else {
 								activeGames.put(tmpGame.getId(), tmpGame);
 							}
-							
+
 							tmpGame.updatePlayerList(gamePlayerList.get(request_data.game.getId()));
-							
-							if(tmpGame.isThereEnoughPlayer()) {
+
+							if (tmpGame.isThereEnoughPlayer() && !launchedThreads.containsKey(tmpGame.getId())) {
+								System.out.println("Creating and intializing new game.");
 								GameThread thread = new GameThread(getController(), tmpGame);
 								Thread gameThread = new Thread(thread);
 								gameThread.setName("Thread-" + tmpGame.getName().replace(" ", "_"));
-								
+
 								launchedThreads.put(tmpGame.getId(), thread);
 								gameThread.start();
 							}
-							
+
 							System.out.println("New active game size : " + activeGames.size());
 						} else {
 							response.isJoinable = false;
@@ -193,38 +195,39 @@ public class GameController {
 
 					server.sendToTCP(connection.getID(), response);
 				}
-				
+
 				if (object instanceof ServerQuitRequest) {
 					ServerQuitResponse response = new ServerQuitResponse();
 					ServerQuitRequest request_data = (ServerQuitRequest) object;
 
 					if (gamePlayerList.get(request_data.gameID).contains(request_data.playerID)) {
 						gamePlayerList.get(request_data.gameID).remove(new Integer(request_data.playerID));
-						
+
 						ServerInfoRefresh refreshBroadcast = new ServerInfoRefresh();
 						refreshBroadcast.playerIDs = gamePlayerList.get(request_data.playerID);
 						server.sendToAllTCP(refreshBroadcast);
-						
+
 						response.hasQuit = true;
-						
+
 						OnlineGame tmpGame = activeGames.get(request_data.gameID);
-						
+
 						tmpGame.updatePlayerList(gamePlayerList.get(request_data.gameID));
-						
-						if(tmpGame.getPlayers().size() == 0) {
+
+						if (tmpGame.getPlayers().size() == 0) {
 							activeGames.remove(tmpGame.getId());
+							launchedThreads.remove(tmpGame.getId());
 							System.out.println("remove game from active game list");
 						}
-						
-						for(OnlineGame activeGame : activeGames.values()) {
-							if(!activeGame.isThereEnoughPlayer() && launchedThreads.containsKey(activeGame.getId())) {
+
+						for (OnlineGame activeGame : activeGames.values()) {
+							if (!activeGame.isThereEnoughPlayer()) {
 								GameThread thread = launchedThreads.get(activeGame.getId());
 								thread.abortStart();
 							}
 						}
-						
+
 						System.out.println("New active game size : " + activeGames.size());
-						
+
 					} else {
 						response.hasQuit = false;
 					}
@@ -254,10 +257,10 @@ public class GameController {
 					response.players = gamePlayerList.get(request_data.gameID);
 					server.sendToTCP(connection.getID(), response);
 				}
-				
-				if(object instanceof GetPlayerAnswer) {
+
+				if (object instanceof GetPlayerAnswer) {
 					GetPlayerAnswer request_data = (GetPlayerAnswer) object;
-					
+
 					GameThread currentThread = launchedThreads.get(request_data.onlineGameID);
 					currentThread.givePlayerAnswer(request_data.playerID, new Answer(request_data.answer));
 				}
@@ -280,22 +283,27 @@ public class GameController {
 		}
 
 	}
-	
+
 	/**
 	 * Send the same message to every players in the arraylist specified
+	 * 
 	 * @param recievers
 	 * @param object
 	 */
 	public void sendTCPTo(ArrayList<Integer> recievers, Object object) {
-		for(int reciever : recievers) {
+		for (int reciever : recievers) {
 			server.sendToTCP(socketPlayerMap.get(reciever), object);
-			
-			if(object instanceof ShowQuestion) {
+
+			if (object instanceof ShowQuestion) {
 				System.out.println("Question showed : " + ((ShowQuestion) object).question.getLabel());
 			}
 		}
 	}
-	
+
+	public void sendTCPTo(int reciever, Object object) {
+		server.sendToTCP(socketPlayerMap.get(reciever), object);
+	}
+
 	public ArrayList<OnlineGame> getServerList() {
 		try {
 			Statement st = getDatabaseHelper().getStatement(0);
@@ -304,7 +312,8 @@ public class GameController {
 
 			while (res.next()) {
 				serverList.add(new OnlineGame(this, res.getInt("id"), res.getString("name"), res.getInt("max_player"),
-						res.getInt("min_player"), res.getInt("time_to_answer"), res.getInt("game_status"), res.getInt("time_before_start")));
+						res.getInt("min_player"), res.getInt("time_to_answer"), res.getInt("game_status"),
+						res.getInt("time_before_start")));
 			}
 
 			return serverList;
@@ -314,6 +323,12 @@ public class GameController {
 		}
 	}
 	
+	public void finishGame(int gameID) {
+		this.launchedThreads.remove(gameID);
+		this.activeGames.get(gameID).getPlayers().clear();
+		this.activeGames.remove(gameID);
+	}
+
 	public GameController getController() {
 		return this;
 	}
@@ -325,7 +340,7 @@ public class GameController {
 	public Config getMyConfig() {
 		return myConfig;
 	}
-	
+
 	public HashMap<Integer, Integer> getSocketPlayerMap() {
 		return socketPlayerMap;
 	}

@@ -50,14 +50,7 @@ public class GameThread implements Runnable {
 		this.gameHistory = new HashMap<Question, HashMap<Integer, Answer>>();
 		this.playerScores = new HashMap<Integer, Integer>();
 
-		for (Question question : game.getQuestions()) {
-			for (int playerID : game.getPlayers()) {
-				HashMap<Integer, Answer> tmpMap = new HashMap<>();
-				tmpMap.put(playerID, null);
-				playerScores.put(playerID, 0);
-				gameHistory.put(question, tmpMap);
-			}
-		}
+		
 
 		this.questionCountdown = game.getTimeToAnswer();
 		this.questionTimer = new Timer("QuestionTimer-" + game.getName().replace(" ", "_"));
@@ -111,12 +104,6 @@ public class GameThread implements Runnable {
 		isStarted = false;
 	}
 
-	public void end() {
-		ServerEndGame serverEndRequest = new ServerEndGame();
-		serverEndRequest.score = 0;
-		controller.sendTCPTo(game.getPlayers(), serverEndRequest);
-	}
-
 	public void givePlayerAnswer(int playerID, Answer answer) {
 		gameHistory.get(this.currentQuestion).put(playerID, answer);
 	}
@@ -145,6 +132,13 @@ public class GameThread implements Runnable {
 			ServerEndGame endGameRequest = new ServerEndGame();
 
 			for (Question question : this.game.getQuestions()) {
+				for (int playerID : game.getPlayers()) {
+					HashMap<Integer, Answer> tmpMap = new HashMap<>();
+					tmpMap.put(playerID, null);
+					playerScores.put(playerID, 0);
+					gameHistory.put(question, tmpMap);
+				}
+				
 				answers.clear();
 				this.currentQuestion = question;
 				for (Answer questionAnswer : question.getAnswers()) {
@@ -170,26 +164,29 @@ public class GameThread implements Runnable {
 			for (Map.Entry<Question, HashMap<Integer, Answer>> entry : gameHistory.entrySet()) {
 				System.out.println("Question : " + entry.getKey().getLabel() + " : ");
 				for (Map.Entry<Integer, Answer> playerAnswersEntries : entry.getValue().entrySet()) {
+					int currentPlayerScore = this.playerScores.get(playerAnswersEntries.getKey());
 					try {
-						System.out.println("Player " + playerAnswersEntries.getKey() + " answered "
-								+ playerAnswersEntries.getValue().getLabel());
-						int currentPlayerScore = this.playerScores.get(playerAnswersEntries.getKey());
+						//Player answered something
 						if (playerAnswersEntries.getValue().isCorrect())
-							this.playerScores.put(playerAnswersEntries.getKey(), currentPlayerScore + 100);
+							this.playerScores.put(playerAnswersEntries.getKey(), currentPlayerScore + (entry.getKey().getDifficulty() * 100));
 					} catch (NullPointerException e) {
-						System.out.println("Player " + playerAnswersEntries.getKey() + " answered nothing...");
+						//Player answered nothing
+						this.playerScores.put(playerAnswersEntries.getKey(), currentPlayerScore);
 					}
 				}
 			}
 			
-			for(int playerID : game.getPlayers()) 
+			for(int playerID : game.getPlayers()) {
+				endGameRequest.score = this.playerScores.get(playerID);
+				this.controller.sendTCPTo(playerID, endGameRequest);
+			}
 
 			questionTimer.cancel();
 			questionTimer.purge();
 
 			gameStartTimer.purge();
-			end();
 
+			
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}

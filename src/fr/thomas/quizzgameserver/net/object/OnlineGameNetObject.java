@@ -20,7 +20,7 @@ public class OnlineGameNetObject {
 		this.minPlayer = minPlayer;
 		this.timeToAnswer = timeToAnswer;
 		this.gameStatus = gameStatus;
-		this.timeBeforeStart = timeToAnswer;
+		this.timeBeforeStart = timeBeforeStart;
 	}
 	
 	public int getId() {
