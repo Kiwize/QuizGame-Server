@@ -38,6 +38,7 @@ public class GameThread implements Runnable {
 	private boolean readyNextQuestion;
 
 	private HashMap<Question, HashMap<Integer, Answer>> gameHistory;
+	private HashMap<Integer, Integer> playerScores;
 	private Question currentQuestion;
 
 	public GameThread(GameController controller, OnlineGame game) {
@@ -47,11 +48,13 @@ public class GameThread implements Runnable {
 		this.game.defineController(controller);
 		this.game.getRandomQuestions();
 		this.gameHistory = new HashMap<Question, HashMap<Integer, Answer>>();
+		this.playerScores = new HashMap<Integer, Integer>();
 
 		for (Question question : game.getQuestions()) {
 			for (int playerID : game.getPlayers()) {
 				HashMap<Integer, Answer> tmpMap = new HashMap<>();
 				tmpMap.put(playerID, null);
+				playerScores.put(playerID, 0);
 				gameHistory.put(question, tmpMap);
 			}
 		}
@@ -139,6 +142,7 @@ public class GameThread implements Runnable {
 			ArrayList<AnswerNetObject> answers = new ArrayList<AnswerNetObject>();
 			AnswerTimeLeft answerTimeLeftRequest = new AnswerTimeLeft();
 			ShowQuestion showQuestionRequest = new ShowQuestion();
+			ServerEndGame endGameRequest = new ServerEndGame();
 
 			for (Question question : this.game.getQuestions()) {
 				answers.clear();
@@ -158,22 +162,27 @@ public class GameThread implements Runnable {
 					answerTimeLeftRequest.maxTime = game.getTimeToAnswer();
 					controller.sendTCPTo(game.getPlayers(), answerTimeLeftRequest);
 				}
-				
+
 				readyNextQuestion = false;
 				questionCountdown = game.getTimeToAnswer();
 			}
 
-			
-			for(Map.Entry<Question, HashMap<Integer, Answer>> entry : gameHistory.entrySet()) {
+			for (Map.Entry<Question, HashMap<Integer, Answer>> entry : gameHistory.entrySet()) {
 				System.out.println("Question : " + entry.getKey().getLabel() + " : ");
-				for(Map.Entry<Integer, Answer> playerAnswersEntries : entry.getValue().entrySet()) {
+				for (Map.Entry<Integer, Answer> playerAnswersEntries : entry.getValue().entrySet()) {
 					try {
-						System.out.println("Player " + playerAnswersEntries.getKey() + " answered " + playerAnswersEntries.getValue().getLabel());
+						System.out.println("Player " + playerAnswersEntries.getKey() + " answered "
+								+ playerAnswersEntries.getValue().getLabel());
+						int currentPlayerScore = this.playerScores.get(playerAnswersEntries.getKey());
+						if (playerAnswersEntries.getValue().isCorrect())
+							this.playerScores.put(playerAnswersEntries.getKey(), currentPlayerScore + 100);
 					} catch (NullPointerException e) {
 						System.out.println("Player " + playerAnswersEntries.getKey() + " answered nothing...");
 					}
 				}
 			}
+			
+			for(int playerID : game.getPlayers()) 
 
 			questionTimer.cancel();
 			questionTimer.purge();
